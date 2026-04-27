@@ -1,0 +1,732 @@
+import { useState, useEffect, useMemo } from "react";
+import { initializeApp } from "firebase/app";
+import {
+  getAuth, createUserWithEmailAndPassword,
+  signInWithEmailAndPassword, signOut, onAuthStateChanged
+} from "firebase/auth";
+import {
+  getFirestore, doc, setDoc, getDoc,
+  collection, onSnapshot, query, orderBy, serverTimestamp
+} from "firebase/firestore";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 🔥 PASTE YOUR FIREBASE CONFIG HERE (replace these placeholder values)
+// ─────────────────────────────────────────────────────────────────────────────
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_AUTH_DOMAIN",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
+};
+// ─────────────────────────────────────────────────────────────────────────────
+
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const db = getFirestore(firebaseApp);
+
+// ── FONTS ─────────────────────────────────────────────────────────────────────
+const fl = document.createElement("link");
+fl.rel = "stylesheet";
+fl.href = "https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Manrope:wght@500;600;700;800&display=swap";
+document.head.appendChild(fl);
+
+// ── STYLES ────────────────────────────────────────────────────────────────────
+const CSS = `
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { background: #f0fdf4; font-family: 'Nunito', sans-serif; color: #1a1a1a; min-height: 100vh; }
+
+.login-bg { min-height:100vh; display:flex; align-items:center; justify-content:center; background:linear-gradient(135deg,#052e16 0%,#14532d 50%,#166534 100%); padding:20px; }
+.login-card { background:#fff; border-radius:24px; padding:40px 32px; width:100%; max-width:400px; box-shadow:0 24px 60px rgba(0,0,0,0.3); }
+.login-icon { font-size:52px; display:block; text-align:center; }
+.login-title { font-family:'Manrope',sans-serif; font-size:26px; font-weight:800; color:#14532d; text-align:center; margin-top:8px; }
+.login-sub { font-size:13px; color:#6b7280; text-align:center; margin-top:4px; margin-bottom:28px; }
+.login-tabs { display:flex; background:#f3f4f6; border-radius:12px; padding:4px; margin-bottom:24px; }
+.ltab { flex:1; padding:10px; border:none; background:transparent; border-radius:8px; font-family:'Nunito',sans-serif; font-size:14px; font-weight:700; color:#6b7280; cursor:pointer; transition:all .2s; }
+.ltab.on { background:#fff; color:#14532d; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+.lfield { margin-bottom:16px; }
+.llabel { font-size:11px; font-weight:800; color:#374151; margin-bottom:6px; display:block; letter-spacing:.05em; text-transform:uppercase; }
+.linput { width:100%; padding:13px 16px; border:2px solid #e5e7eb; border-radius:12px; font-family:'Nunito',sans-serif; font-size:15px; color:#111; outline:none; transition:border-color .2s; }
+.linput:focus { border-color:#22c55e; }
+.lbtn { width:100%; padding:14px; border-radius:12px; background:linear-gradient(135deg,#16a34a,#15803d); border:none; color:#fff; font-family:'Manrope',sans-serif; font-size:15px; font-weight:800; cursor:pointer; margin-top:8px; transition:all .2s; }
+.lbtn:hover { transform:translateY(-1px); box-shadow:0 6px 20px rgba(22,163,74,.4); }
+.lbtn:disabled { opacity:.6; cursor:not-allowed; transform:none; }
+.lerr { background:#fef2f2; border:1px solid #fca5a5; border-radius:10px; padding:10px 14px; font-size:13px; color:#ef4444; margin-top:10px; text-align:center; font-weight:600; }
+.lnote { font-size:11px; color:#9ca3af; text-align:center; margin-top:16px; }
+
+.app { min-height:100vh; background:#f0fdf4; }
+.topbar { background:#fff; border-bottom:2px solid #dcfce7; padding:0 12px; position:sticky; top:0; z-index:100; display:flex; align-items:center; gap:2px; overflow-x:auto; }
+.alogo { font-family:'Manrope',sans-serif; font-size:16px; font-weight:800; color:#14532d; padding:14px 12px 14px 0; border-right:2px solid #dcfce7; margin-right:4px; white-space:nowrap; }
+.tbtn { padding:14px 12px; font-family:'Nunito',sans-serif; font-size:13px; font-weight:700; color:#6b7280; border:none; background:none; cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px; transition:all .15s; white-space:nowrap; }
+.tbtn.on { color:#16a34a; border-bottom-color:#16a34a; }
+.tright { margin-left:auto; display:flex; align-items:center; gap:8px; flex-shrink:0; }
+.uchip { display:flex; align-items:center; gap:5px; background:#f0fdf4; border:1px solid #bbf7d0; border-radius:20px; padding:5px 12px; font-size:12px; font-weight:700; color:#15803d; white-space:nowrap; }
+.logoutbtn { background:none; border:1px solid #e5e7eb; border-radius:8px; padding:5px 10px; font-size:12px; color:#6b7280; cursor:pointer; font-family:'Nunito',sans-serif; font-weight:600; }
+.logoutbtn:hover { border-color:#ef4444; color:#ef4444; }
+.mnav { display:flex; align-items:center; gap:5px; }
+.mnavbtn { width:26px; height:26px; border-radius:50%; border:1px solid #dcfce7; background:#fff; color:#16a34a; font-size:14px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+.mlbl { font-size:12px; font-weight:800; color:#111; min-width:100px; text-align:center; font-family:'Manrope',sans-serif; }
+
+.sumbar { background:#fff; border-bottom:1px solid #dcfce7; padding:10px 16px; display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
+.sitem { display:flex; flex-direction:column; gap:1px; }
+.slbl { font-size:10px; color:#9ca3af; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+.sval { font-family:'Manrope',sans-serif; font-size:19px; font-weight:800; color:#111; }
+.sprog { flex:1; min-width:120px; }
+.ptrack { height:10px; background:#dcfce7; border-radius:5px; overflow:hidden; margin-top:4px; }
+.pfill { height:100%; background:linear-gradient(90deg,#22c55e,#16a34a); border-radius:5px; transition:width .6s; }
+.ppct { font-family:'Manrope',sans-serif; font-size:13px; font-weight:800; color:#16a34a; }
+
+.grid-outer { overflow-x:auto; margin:12px; border-radius:14px; border:1px solid #dcfce7; background:#fff; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+.gtbl { border-collapse:collapse; min-width:100%; font-size:12px; }
+.th-h { position:sticky; left:0; z-index:10; background:#fff; min-width:175px; padding:10px 14px; border-right:2px solid #dcfce7; border-bottom:1px solid #f3f4f6; font-weight:800; font-size:10px; color:#6b7280; text-transform:uppercase; letter-spacing:.06em; }
+.th-wk { background:#f0fdf4; text-align:center; font-weight:800; font-size:10px; color:#15803d; padding:7px 4px; border-bottom:1px solid #dcfce7; letter-spacing:.06em; }
+.th-dn { background:#f9fafb; text-align:center; font-size:10px; font-weight:700; color:#9ca3af; padding:4px 2px; border-bottom:1px solid #f0f0f0; }
+.th-dd { background:#fff; text-align:center; font-weight:800; font-size:11px; color:#111; padding:4px 2px; border-bottom:2px solid #dcfce7; font-family:'Manrope',sans-serif; }
+.tdot { display:inline-flex; width:20px; height:20px; border-radius:50%; background:#16a34a; color:#fff; align-items:center; justify-content:center; font-size:10px; font-weight:900; }
+.td-h { position:sticky; left:0; z-index:5; background:#fff; padding:6px 14px; border-right:2px solid #dcfce7; border-bottom:1px solid #f9f9f9; white-space:nowrap; }
+.hnm { font-size:13px; font-weight:700; color:#1a1a1a; display:flex; align-items:center; gap:6px; }
+.hrule { font-size:10px; color:#9ca3af; margin-top:2px; font-weight:600; }
+.hrule.blk { color:#f87171; }
+.td-c { text-align:center; padding:4px 2px; border-bottom:1px solid #f9f9f9; vertical-align:middle; cursor:pointer; }
+.td-c:hover { background:#f0fdf4; }
+.td-c.fut { background:#fafafa; cursor:default; }
+.chk { width:20px; height:20px; border-radius:5px; border:1.5px solid #d1d5db; background:#fff; display:inline-flex; align-items:center; justify-content:center; margin:auto; transition:all .15s; }
+.chk.on { background:#16a34a; border-color:#16a34a; box-shadow:0 0 8px rgba(22,163,74,.3); }
+.chk.on::after { content:'✓'; color:#fff; font-size:11px; font-weight:900; }
+.chk.bk { background:#fef2f2; border-color:#fca5a5; }
+.chk.bk::after { content:'✕'; color:#ef4444; font-size:11px; font-weight:900; }
+.td-pl { position:sticky; left:0; z-index:5; background:#f0fdf4; padding:5px 14px; font-size:9px; font-weight:800; color:#6b7280; text-transform:uppercase; letter-spacing:.06em; border-top:2px solid #dcfce7; border-right:2px solid #dcfce7; }
+.td-p { text-align:center; padding:5px 2px; background:#f0fdf4; font-weight:800; font-size:11px; font-family:'Manrope',sans-serif; border-top:2px solid #dcfce7; }
+.p100{color:#16a34a} .p75{color:#22c55e} .p50{color:#ca8a04} .p25{color:#f97316} .p0{color:#d1d5db}
+.td-dl { position:sticky; left:0; z-index:5; background:#f9fafb; padding:4px 14px; font-size:9px; font-weight:700; color:#9ca3af; border-right:2px solid #dcfce7; border-top:1px solid #f0f0f0; }
+.td-d { text-align:center; padding:3px 2px; background:#f9fafb; font-size:11px; font-weight:700; font-family:'Manrope',sans-serif; border-top:1px solid #f0f0f0; }
+.dyes{color:#16a34a} .dno{color:#ef4444}
+.add-rw { position:sticky; left:0; z-index:5; display:flex; gap:8px; align-items:center; padding:8px 14px; background:#f0fdf4; border-top:1px solid #dcfce7; }
+.add-in { flex:1; background:#fff; border:1.5px solid #dcfce7; border-radius:8px; padding:8px 12px; font-family:'Nunito',sans-serif; font-size:13px; color:#111; outline:none; }
+.add-in:focus { border-color:#22c55e; }
+.add-in-sm { width:70px; background:#fff; border:1.5px solid #dcfce7; border-radius:8px; padding:8px 8px; font-family:'Nunito',sans-serif; font-size:12px; color:#111; outline:none; text-align:center; }
+.addbtn { padding:8px 14px; border-radius:8px; background:#16a34a; border:none; color:#fff; font-family:'Nunito',sans-serif; font-size:12px; font-weight:800; cursor:pointer; }
+.delbtn { background:none; border:none; color:#d1d5db; font-size:12px; cursor:pointer; padding:0 4px; }
+.delbtn:hover { color:#ef4444; }
+
+.pop-ov { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:500; display:flex; align-items:center; justify-content:center; padding:20px; animation:fi .2s; }
+@keyframes fi { from{opacity:0} to{opacity:1} }
+.pop-box { background:#fff; border-radius:20px; padding:28px 24px; width:100%; max-width:340px; box-shadow:0 24px 60px rgba(0,0,0,.25); animation:pu .25s cubic-bezier(.34,1.56,.64,1); }
+@keyframes pu { from{transform:scale(.85);opacity:0} to{transform:scale(1);opacity:1} }
+.p-emoji { font-size:42px; text-align:center; display:block; margin-bottom:10px; }
+.p-title { font-family:'Manrope',sans-serif; font-size:17px; font-weight:800; text-align:center; color:#111; margin-bottom:4px; }
+.p-sub { font-size:12px; color:#6b7280; text-align:center; margin-bottom:16px; line-height:1.5; }
+.p-rule { background:#f0fdf4; border:1px solid #bbf7d0; border-radius:10px; padding:10px 14px; margin-bottom:14px; font-size:12px; font-weight:700; color:#15803d; text-align:center; }
+.p-rule.blk { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+.p-inp-row { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.p-num { flex:1; padding:12px; border:2px solid #e5e7eb; border-radius:12px; font-family:'Manrope',sans-serif; font-size:22px; font-weight:800; color:#111; text-align:center; outline:none; transition:border-color .2s; }
+.p-num:focus { border-color:#22c55e; }
+.p-unit { font-size:13px; font-weight:700; color:#6b7280; }
+.p-warn { background:#fef3c7; border:1px solid #fcd34d; border-radius:10px; padding:10px; font-size:12px; font-weight:700; color:#92400e; text-align:center; margin-bottom:12px; }
+.p-warn.red { background:#fef2f2; border-color:#fca5a5; color:#dc2626; }
+.p-btns { display:flex; gap:8px; }
+.p-cancel { flex:1; padding:12px; border-radius:12px; border:2px solid #e5e7eb; background:#fff; font-family:'Nunito',sans-serif; font-size:14px; font-weight:700; color:#6b7280; cursor:pointer; }
+.p-unch { flex:1; padding:12px; border-radius:12px; border:2px solid #fca5a5; background:#fff; font-family:'Nunito',sans-serif; font-size:14px; font-weight:700; color:#ef4444; cursor:pointer; }
+.p-ok { flex:2; padding:12px; border-radius:12px; border:none; background:#16a34a; color:#fff; font-family:'Nunito',sans-serif; font-size:14px; font-weight:800; cursor:pointer; }
+.p-ok.danger { background:#ef4444; }
+
+.week-wrap { padding:12px; display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+.wcard { background:#fff; border:1px solid #dcfce7; border-radius:14px; padding:12px 8px; display:flex; flex-direction:column; align-items:center; gap:8px; }
+.wcard.tod { border-color:#16a34a; box-shadow:0 0 0 2px #bbf7d0; }
+.wdname { font-size:10px; font-weight:800; color:#6b7280; text-transform:uppercase; letter-spacing:.08em; }
+.wddate { font-family:'Manrope',sans-serif; font-size:12px; font-weight:700; color:#111; }
+.dnt-wrap { position:relative; width:56px; height:56px; }
+.dnt-pct { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:'Manrope',sans-serif; font-size:12px; font-weight:800; color:#111; }
+.wtasks { width:100%; display:flex; flex-direction:column; gap:3px; }
+.wtask { display:flex; align-items:flex-start; gap:5px; cursor:pointer; padding:2px 0; }
+.wchk { width:13px; height:13px; border-radius:3px; border:1.5px solid #d1d5db; flex-shrink:0; margin-top:1px; display:flex; align-items:center; justify-content:center; }
+.wchk.on { background:#16a34a; border-color:#16a34a; }
+.wchk.on::after { content:'✓'; color:#fff; font-size:8px; font-weight:900; }
+.wtnm { font-size:9px; font-weight:600; color:#374151; line-height:1.4; }
+.wtnm.done { color:#9ca3af; text-decoration:line-through; }
+.wcnt { font-family:'Manrope',sans-serif; font-size:12px; font-weight:700; }
+.wcd{color:#16a34a} .wct{color:#9ca3af}
+
+.win-page { padding:12px; display:flex; flex-direction:column; gap:12px; }
+.win-card { background:linear-gradient(135deg,#052e16,#14532d); border-radius:20px; padding:28px 24px; text-align:center; color:#fff; box-shadow:0 8px 32px rgba(5,46,22,.35); position:relative; overflow:hidden; }
+.win-card::before { content:''; position:absolute; top:-40px; right:-40px; width:180px; height:180px; border-radius:50%; background:radial-gradient(circle,rgba(255,255,255,.06),transparent 70%); }
+.win-trophy { font-size:64px; display:block; margin-bottom:12px; }
+.win-ttl { font-family:'Manrope',sans-serif; font-size:11px; letter-spacing:.25em; color:#86efac; font-weight:700; text-transform:uppercase; }
+.win-name { font-family:'Manrope',sans-serif; font-size:34px; font-weight:900; color:#fff; margin-top:6px; }
+.win-stat { font-size:14px; color:#86efac; margin-top:6px; }
+.win-wk { font-size:12px; color:#4ade80; margin-top:4px; }
+.lb-card { background:#fff; border:1px solid #dcfce7; border-radius:16px; overflow:hidden; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+.lb-hdr { background:#f0fdf4; padding:10px 16px; display:grid; grid-template-columns:44px 1fr 70px 70px; gap:8px; border-bottom:2px solid #dcfce7; }
+.lb-th { font-size:10px; font-weight:800; color:#6b7280; text-transform:uppercase; letter-spacing:.06em; }
+.lb-th.c { text-align:center; }
+.lb-row { display:grid; grid-template-columns:44px 1fr 70px 70px; gap:8px; padding:12px 16px; border-bottom:1px solid #f3f4f6; align-items:center; }
+.lb-row:last-child { border-bottom:none; }
+.lb-row.you { background:#f0fdf4; }
+.lb-rk { font-family:'Manrope',sans-serif; font-size:18px; font-weight:800; color:#9ca3af; text-align:center; }
+.lb-rk.g{color:#f59e0b} .lb-rk.s{color:#6b7280} .lb-rk.b{color:#b45309}
+.lb-nm { font-size:14px; font-weight:700; }
+.lb-you { font-size:10px; color:#16a34a; font-weight:700; }
+.lb-n { font-family:'Manrope',sans-serif; font-size:14px; font-weight:700; text-align:center; }
+.lb-p{color:#16a34a} .lb-c{color:#6b7280}
+.how-card { background:#fff; border:1px solid #dcfce7; border-radius:16px; padding:16px 20px; }
+.how-ttl { font-size:11px; font-weight:800; color:#6b7280; text-transform:uppercase; letter-spacing:.08em; margin-bottom:12px; }
+.how-row { display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px solid #f3f4f6; font-size:13px; }
+.how-row:last-child { border-bottom:none; }
+.how-pts { font-family:'Manrope',sans-serif; font-weight:800; color:#16a34a; }
+.live-badge { display:inline-flex; align-items:center; gap:4px; background:#dcfce7; border-radius:20px; padding:3px 10px; font-size:10px; font-weight:700; color:#16a34a; margin-left:8px; }
+.live-dot { width:6px; height:6px; border-radius:50%; background:#16a34a; animation:pulse 1.5s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.an-wrap { padding:12px; display:flex; flex-direction:column; gap:10px; }
+.an-hdr { background:#fff; border:1px solid #dcfce7; border-radius:16px; padding:16px 20px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+.an-stat { text-align:center; }
+.an-val { font-family:'Manrope',sans-serif; font-size:30px; font-weight:800; color:#16a34a; }
+.an-lbl { font-size:10px; color:#9ca3af; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+.an-tbl { background:#fff; border:1px solid #dcfce7; border-radius:16px; overflow:hidden; }
+.an-thr { display:grid; grid-template-columns:1fr 65px 65px 1fr; background:#f0fdf4; padding:10px 16px; border-bottom:2px solid #dcfce7; }
+.an-th { font-size:10px; font-weight:800; color:#15803d; text-transform:uppercase; letter-spacing:.06em; }
+.an-th.c { text-align:center; }
+.an-row { display:grid; grid-template-columns:1fr 65px 65px 1fr; padding:10px 16px; border-bottom:1px solid #f3f4f6; align-items:center; }
+.an-row:last-child { border-bottom:none; }
+.an-hb { font-size:13px; font-weight:600; display:flex; align-items:center; gap:6px; }
+.an-n { font-family:'Manrope',sans-serif; font-size:14px; font-weight:700; text-align:center; }
+.an-g{color:#9ca3af} .an-a{color:#16a34a}
+.an-prog { display:flex; align-items:center; gap:6px; }
+.an-pt { flex:1; height:8px; background:#dcfce7; border-radius:4px; overflow:hidden; }
+.an-pf { height:100%; border-radius:4px; transition:width .6s; }
+.an-pc { font-family:'Manrope',sans-serif; font-size:11px; font-weight:800; min-width:36px; text-align:right; }
+
+.toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#14532d; color:#fff; font-size:13px; font-weight:700; padding:10px 20px; border-radius:20px; z-index:999; white-space:nowrap; animation:tin .25s,tout .25s 1.8s forwards; }
+@keyframes tin { from{opacity:0;transform:translateX(-50%) translateY(8px)} to{opacity:1;transform:translateX(-50%) translateY(0)} }
+@keyframes tout { to{opacity:0} }
+.loading { min-height:100vh; display:flex; align-items:center; justify-content:center; background:#f0fdf4; font-family:'Manrope',sans-serif; font-size:18px; font-weight:700; color:#16a34a; gap:10px; }
+@media(max-width:640px){ .week-wrap{grid-template-columns:repeat(3,1fr)} .an-thr,.an-row{grid-template-columns:1fr 50px 50px 1fr} }
+`;
+const se = document.createElement("style"); se.textContent = CSS; document.head.appendChild(se);
+
+// ── CONSTANTS ─────────────────────────────────────────────────────────────────
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const DAYS = ["Su","Mo","Tu","We","Th","Fr","Sa"];
+const FAKE_DOMAIN = "@habitwork.app";
+
+const DEFAULT_HABITS = [
+  { id:"1", name:"Wake up at 05:00", emoji:"⏰", minHrs:0, maxHrs:null, blockIfOver:false, confirmOnly:true, note:"Did you wake up by 5 AM?" },
+  { id:"2", name:"Gym", emoji:"💪", minHrs:0.75, maxHrs:null, blockIfOver:false, confirmOnly:false, note:"Min 45 min required" },
+  { id:"3", name:"No Porn", emoji:"🚫", minHrs:0, maxHrs:null, blockIfOver:false, confirmOnly:true, note:"Just confirm — yes or no" },
+  { id:"4", name:"Reading / Learning", emoji:"📚", minHrs:4, maxHrs:null, blockIfOver:false, confirmOnly:false, note:"Min 4 hours required" },
+  { id:"5", name:"Budget Tracking", emoji:"💰", minHrs:0, maxHrs:null, blockIfOver:false, confirmOnly:true, note:"Did you track your budget?" },
+  { id:"6", name:"Project Work", emoji:"🎯", minHrs:2, maxHrs:null, blockIfOver:false, confirmOnly:false, note:"Min 2 hours required" },
+  { id:"7", name:"No Alcohol", emoji:"🍃", minHrs:0, maxHrs:null, blockIfOver:false, confirmOnly:true, note:"Just confirm — yes or no" },
+  { id:"8", name:"Social Media Detox", emoji:"📵", minHrs:null, maxHrs:2, blockIfOver:true, confirmOnly:false, note:"Over 2hrs = BLOCKED! Enter actual time used" },
+  { id:"9", name:"Goal Journaling", emoji:"📔", minHrs:0.25, maxHrs:null, blockIfOver:false, confirmOnly:false, note:"Min 15 min required" },
+  { id:"10", name:"Cold Shower", emoji:"🚿", minHrs:0, maxHrs:null, blockIfOver:false, confirmOnly:true, note:"Did you take a cold shower?" },
+];
+
+function getDays(y,m){ return new Date(y,m+1,0).getDate(); }
+function getFirstDow(y,m){ return new Date(y,m,1).getDay(); }
+function buildWeeks(y,m){
+  const total=getDays(y,m), first=getFirstDow(y,m);
+  const cells=[]; for(let d=1;d<=total;d++) cells.push({dayNum:d,dow:new Date(y,m,d).getDay()});
+  const weeks=[]; let wk=[];
+  for(let i=0;i<first;i++) wk.push(null);
+  for(const c of cells){ wk.push(c); if(wk.length===7){weeks.push(wk);wk=[];} }
+  if(wk.length) weeks.push(wk);
+  return {weeks,total};
+}
+function pClass(p){ return p===100?"p100":p>=75?"p75":p>=50?"p50":p>0?"p25":"p0"; }
+function acColor(p){ return p>=80?"#16a34a":p>=60?"#eab308":"#ef4444"; }
+
+function Donut({pct,size=56}){
+  const r=(size-6)/2,circ=2*Math.PI*r,dash=(pct/100)*circ;
+  const col=pct===100?"#16a34a":pct>=75?"#22c55e":pct>=50?"#eab308":pct>0?"#f97316":"#e5e7eb";
+  return(
+    <svg width={size} height={size} style={{transform:"rotate(-90deg)"}}>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#dcfce7" strokeWidth={6}/>
+      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={col} strokeWidth={6}
+        strokeDasharray={`${dash} ${circ}`} strokeLinecap="round" style={{transition:"stroke-dasharray .5s"}}/>
+    </svg>
+  );
+}
+
+// ── MAIN ──────────────────────────────────────────────────────────────────────
+export default function App(){
+  const now = new Date();
+  const [authUser, setAuthUser] = useState(undefined); // undefined = loading
+  const [displayName, setDisplayName] = useState("");
+  const [authTab, setAuthTab] = useState("login");
+  const [authName, setAuthName] = useState("");
+  const [authPass, setAuthPass] = useState("");
+  const [authErr, setAuthErr] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  const [tab, setTab] = useState("monthly");
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth());
+  const [habits, setHabits] = useState(DEFAULT_HABITS);
+  const [comps, setComps] = useState({});
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [toast, setToast] = useState(null);
+  const [newName, setNewName] = useState("");
+  const [newMin, setNewMin] = useState("");
+  const [newEmoji, setNewEmoji] = useState("⚡");
+  const [popup, setPopup] = useState(null);
+  const [popupHrs, setPopupHrs] = useState("");
+
+  const showToast = (msg) => { setToast(msg); setTimeout(()=>setToast(null),2200); };
+
+  // ── AUTH LISTENER ────────────────────────────────────────────────────────
+  useEffect(()=>{
+    const unsub = onAuthStateChanged(auth, async (user)=>{
+      setAuthUser(user);
+      if(user){
+        try {
+          const snap = await getDoc(doc(db,"users",user.uid));
+          if(snap.exists()) setDisplayName(snap.data().name);
+        } catch(_){}
+      }
+    });
+    return ()=>unsub();
+  },[]);
+
+  // ── LOAD HABITS + COMPLETIONS ─────────────────────────────────────────────
+  useEffect(()=>{
+    if(!authUser) return;
+    (async()=>{
+      try {
+        const hs = await getDoc(doc(db,"userHabits",authUser.uid));
+        if(hs.exists()) setHabits(hs.data().habits);
+        const cs = await getDoc(doc(db,"completions",`${authUser.uid}_${year}_${month}`));
+        if(cs.exists()) setComps(cs.data().data||{});
+        else setComps({});
+      } catch(_){ setComps({}); }
+    })();
+  },[authUser, year, month]);
+
+  // ── REAL-TIME LEADERBOARD ─────────────────────────────────────────────────
+  useEffect(()=>{
+    const q = query(collection(db,"leaderboard"), orderBy("monthPts","desc"));
+    const unsub = onSnapshot(q, (snap)=>{
+      const rows = snap.docs.map(d=>({id:d.id,...d.data()}))
+        .filter(r=>r.monthKey===`${year}-${month}`);
+      // fallback: show all if none match current month
+      setLeaderboard(rows.length>0?rows:snap.docs.map(d=>({id:d.id,...d.data()})));
+    }, ()=>{});
+    return ()=>unsub();
+  },[year, month]);
+
+  // ── SAVE COMPLETIONS + UPDATE LEADERBOARD ────────────────────────────────
+  const saveComps = async (updated) => {
+    if(!authUser) return;
+    const pts = Object.values(updated).filter(v=>v?.done).length * 10;
+    try {
+      await setDoc(doc(db,"completions",`${authUser.uid}_${year}_${month}`),
+        { data: updated, uid: authUser.uid, name: displayName, updatedAt: serverTimestamp() });
+      await setDoc(doc(db,"leaderboard",authUser.uid),
+        { name: displayName, monthPts: pts, checks: Object.values(updated).filter(v=>v?.done).length,
+          monthKey: `${year}-${month}`, updatedAt: serverTimestamp() }, { merge: true });
+    } catch(_){}
+  };
+
+  const saveHabits = async (h) => {
+    if(!authUser) return;
+    try { await setDoc(doc(db,"userHabits",authUser.uid),{habits:h}); } catch(_){}
+  };
+
+  // ── SIGNUP / LOGIN ────────────────────────────────────────────────────────
+  const handleAuth = async () => {
+    setAuthErr(""); setAuthLoading(true);
+    const email = authName.trim().toLowerCase().replace(/\s+/g,"_") + FAKE_DOMAIN;
+    try {
+      if(authTab==="signup"){
+        if(!authName.trim()){ setAuthErr("Enter your name."); setAuthLoading(false); return; }
+        if(authPass.length<4){ setAuthErr("Password needs 4+ characters."); setAuthLoading(false); return; }
+        const cred = await createUserWithEmailAndPassword(auth, email, authPass);
+        await setDoc(doc(db,"users",cred.user.uid),{ name:authName.trim(), createdAt:serverTimestamp() });
+        setDisplayName(authName.trim());
+        showToast(`Welcome ${authName.trim()}! 🎉`);
+      } else {
+        const cred = await signInWithEmailAndPassword(auth, email, authPass);
+        const snap = await getDoc(doc(db,"users",cred.user.uid));
+        if(snap.exists()) setDisplayName(snap.data().name);
+        showToast(`Welcome back! 👋`);
+      }
+    } catch(e){
+      if(e.code==="auth/user-not-found"||e.code==="auth/invalid-credential") setAuthErr("Name not found. Sign up first.");
+      else if(e.code==="auth/wrong-password") setAuthErr("Wrong password.");
+      else if(e.code==="auth/email-already-in-use") setAuthErr("Name taken. Try another.");
+      else setAuthErr("Error: "+e.message);
+    }
+    setAuthLoading(false);
+  };
+
+  const handleLogout = async () => { await signOut(auth); setComps({}); setDisplayName(""); setLeaderboard([]); };
+
+  // ── GRID ──────────────────────────────────────────────────────────────────
+  const {weeks, total} = useMemo(()=>buildWeeks(year,month),[year,month]);
+  const todayDay = (now.getFullYear()===year&&now.getMonth()===month)?now.getDate():-1;
+  const allDays = useMemo(()=>Array.from({length:total},(_,i)=>i+1),[total]);
+  const getComp = (hid, day) => comps[`${hid}-${day}`]||null;
+
+  const openPopup = (habit, day) => {
+    if(day>todayDay&&todayDay>0) return;
+    const ex = getComp(habit.id, day);
+    setPopupHrs(ex?String(ex.hrs):"");
+    setPopup({habit, day, existing:!!ex});
+  };
+
+  const confirmPopup = async () => {
+    const {habit, day} = popup;
+    const hrs = parseFloat(popupHrs)||0;
+    if(!habit.confirmOnly){
+      if(habit.minHrs&&habit.minHrs>0&&hrs<habit.minHrs){
+        showToast(`❌ Need at least ${habit.minHrs>=1?habit.minHrs+"h":habit.minHrs*60+"min"}`);
+        setPopup(null); return;
+      }
+      if(habit.blockIfOver&&habit.maxHrs!==null&&hrs>habit.maxHrs){
+        const key=`${habit.id}-${day}`;
+        const updated={...comps,[key]:{done:false,hrs,blocked:true}};
+        setComps(updated); await saveComps(updated);
+        showToast(`🚫 Over ${habit.maxHrs}h — blocked!`); setPopup(null); return;
+      }
+    }
+    const key=`${habit.id}-${day}`;
+    const updated={...comps,[key]:{done:true,hrs:habit.confirmOnly?1:hrs,blocked:false}};
+    setComps(updated); await saveComps(updated);
+    showToast(`✅ ${habit.name} logged!`); setPopup(null);
+  };
+
+  const uncheckCell = async (habit, day) => {
+    const key=`${habit.id}-${day}`;
+    const {[key]:_,...rest}=comps;
+    setComps(rest); await saveComps(rest);
+  };
+
+  const dayStats = useMemo(()=>allDays.map(d=>{
+    const done=habits.filter(h=>getComp(h.id,d)?.done).length;
+    return {day:d,done,total:habits.length,pct:habits.length?Math.round(done/habits.length*100):0};
+  }),[allDays,habits,comps]);
+
+  const totalChecks = useMemo(()=>Object.values(comps).filter(v=>v?.done).length,[comps]);
+  const totalPossible = habits.length*total;
+  const overallPct = totalPossible?Math.round(totalChecks/totalPossible*100):0;
+
+  const addHabit = async () => {
+    if(!newName.trim()) return;
+    const h={id:String(Date.now()),name:newName.trim(),emoji:newEmoji,minHrs:newMin?parseFloat(newMin):0,maxHrs:null,blockIfOver:false,confirmOnly:!newMin,note:newMin?`Min ${newMin}h required`:"Tap to confirm"};
+    const updated=[...habits,h]; setHabits(updated); await saveHabits(updated);
+    setNewName(""); setNewMin(""); showToast("Habit added!");
+  };
+
+  const delHabit = async (id) => {
+    const updated=habits.filter(h=>h.id!==id); setHabits(updated); await saveHabits(updated);
+  };
+
+  // ── LOADING ───────────────────────────────────────────────────────────────
+  if(authUser===undefined) return <div className="loading">🌿 Loading HabitWork…</div>;
+
+  // ── LOGIN SCREEN ──────────────────────────────────────────────────────────
+  if(!authUser) return (
+    <div className="login-bg">
+      {toast&&<div className="toast">{toast}</div>}
+      <div className="login-card">
+        <span className="login-icon">🌿</span>
+        <div className="login-title">HabitWork</div>
+        <div className="login-sub">Turn discipline into your superpower</div>
+        <div className="login-tabs">
+          <button className={`ltab ${authTab==="login"?"on":""}`} onClick={()=>{setAuthTab("login");setAuthErr("");}}>Login</button>
+          <button className={`ltab ${authTab==="signup"?"on":""}`} onClick={()=>{setAuthTab("signup");setAuthErr("");}}>Sign Up</button>
+        </div>
+        <div className="lfield">
+          <label className="llabel">Your Name</label>
+          <input className="linput" placeholder="e.g. Vansh" value={authName} onChange={e=>setAuthName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAuth()} />
+        </div>
+        <div className="lfield">
+          <label className="llabel">Password</label>
+          <input className="linput" type="password" placeholder="Min 4 characters" value={authPass} onChange={e=>setAuthPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAuth()} />
+        </div>
+        <button className="lbtn" onClick={handleAuth} disabled={authLoading}>
+          {authLoading?"Loading…":authTab==="login"?"→ Login":"→ Create Account"}
+        </button>
+        {authErr&&<div className="lerr">{authErr}</div>}
+        <div className="lnote">No email needed — just name & password 🔒<br/>Switch device anytime — your data syncs! ☁️</div>
+      </div>
+    </div>
+  );
+
+  const habitStats = habits.map(h=>{
+    const actual=allDays.filter(d=>getComp(h.id,d)?.done).length;
+    return {...h,goal:total,actual,pct:Math.round(actual/total*100)};
+  });
+
+  const winner = leaderboard[0];
+
+  return (
+    <div className="app">
+      {toast&&<div className="toast">{toast}</div>}
+
+      {/* POPUP */}
+      {popup&&(()=>{
+        const {habit,day,existing}=popup;
+        const hrs=parseFloat(popupHrs)||0;
+        const willBlock=habit.blockIfOver&&habit.maxHrs!==null&&hrs>habit.maxHrs;
+        const tooLow=habit.minHrs&&habit.minHrs>0&&hrs>0&&hrs<habit.minHrs;
+        return(
+          <div className="pop-ov" onClick={e=>e.target===e.currentTarget&&setPopup(null)}>
+            <div className="pop-box">
+              <span className="p-emoji">{habit.emoji}</span>
+              <div className="p-title">{habit.name}</div>
+              <div className="p-sub">Day {day} · {MONTHS[month]} {year}</div>
+              <div className={`p-rule ${habit.blockIfOver?"blk":""}`}>{habit.note}</div>
+              {!habit.confirmOnly&&(
+                <>
+                  <div className="p-inp-row">
+                    <input className="p-num" type="number" min="0" step="0.25" placeholder="0"
+                      value={popupHrs} onChange={e=>setPopupHrs(e.target.value)} autoFocus/>
+                    <span className="p-unit">hours</span>
+                  </div>
+                  {tooLow&&<div className="p-warn">⚠️ Need at least {habit.minHrs>=1?habit.minHrs+"h":habit.minHrs*60+"min"}!</div>}
+                  {willBlock&&<div className="p-warn red">🚫 Over {habit.maxHrs}h — will be BLOCKED!</div>}
+                </>
+              )}
+              {habit.confirmOnly&&<div style={{textAlign:"center",fontSize:13,color:"#6b7280",marginBottom:16}}>Tap Confirm to mark done ✅</div>}
+              <div className="p-btns">
+                <button className="p-cancel" onClick={()=>setPopup(null)}>Cancel</button>
+                {existing&&<button className="p-unch" onClick={()=>{uncheckCell(habit,day);setPopup(null);}}>Uncheck</button>}
+                <button className={`p-ok ${willBlock?"danger":""}`} onClick={confirmPopup}>{willBlock?"Block ✕":"Confirm ✓"}</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* TOPBAR */}
+      <div className="topbar">
+        <div className="alogo">🌿 HabitWork</div>
+        <button className={`tbtn ${tab==="monthly"?"on":""}`} onClick={()=>setTab("monthly")}>Monthly</button>
+        <button className={`tbtn ${tab==="weekly"?"on":""}`} onClick={()=>setTab("weekly")}>Weekly</button>
+        <button className={`tbtn ${tab==="winner"?"on":""}`} onClick={()=>setTab("winner")}>🏆 Winner</button>
+        <button className={`tbtn ${tab==="analysis"?"on":""}`} onClick={()=>setTab("analysis")}>Analysis</button>
+        <div className="tright">
+          <div className="mnav">
+            <button className="mnavbtn" onClick={()=>{setComps({});if(month===0){setYear(y=>y-1);setMonth(11);}else setMonth(m=>m-1);}}>‹</button>
+            <span className="mlbl">{MONTHS[month]} {year}</span>
+            <button className="mnavbtn" onClick={()=>{setComps({});if(month===11){setYear(y=>y+1);setMonth(0);}else setMonth(m=>m+1);}}>›</button>
+          </div>
+          <div className="uchip">👤 {displayName}</div>
+          <button className="logoutbtn" onClick={handleLogout}>Logout</button>
+        </div>
+      </div>
+
+      {/* SUMMARY */}
+      <div className="sumbar">
+        <div className="sitem"><div className="slbl">Habits</div><div className="sval">{habits.length}</div></div>
+        <div className="sitem"><div className="slbl">Checks</div><div className="sval" style={{color:"#16a34a"}}>{totalChecks}</div></div>
+        <div className="sitem"><div className="slbl">Day</div><div className="sval">{todayDay>0?todayDay:total}/{total}</div></div>
+        <div className="sprog">
+          <div className="slbl">Progress</div>
+          <div className="ptrack"><div className="pfill" style={{width:`${overallPct}%`}}/></div>
+          <div className="ppct">{overallPct}%</div>
+        </div>
+      </div>
+
+      {/* ══ MONTHLY ══════════════════════════════════════════════════════════ */}
+      {tab==="monthly"&&(
+        <div className="grid-outer">
+          <table className="gtbl">
+            <thead>
+              <tr>
+                <th className="th-h">{MONTHS[month]} {year}</th>
+                {weeks.map((_,wi)=><th key={wi} className="th-wk" colSpan={7}>Week {wi+1}</th>)}
+              </tr>
+              <tr>
+                <th className="th-h" style={{borderBottom:"1px solid #f3f4f6"}}></th>
+                {weeks.map((wk,wi)=>wk.map((c,di)=><th key={`dn${wi}${di}`} className="th-dn">{c?DAYS[c.dow]:""}</th>))}
+              </tr>
+              <tr>
+                <th className="th-h" style={{fontWeight:700}}>Habits ↓  Days →</th>
+                {weeks.map((wk,wi)=>wk.map((c,di)=>(
+                  <th key={`dd${wi}${di}`} className="th-dd">
+                    {c?(c.dayNum===todayDay?<span className="tdot">{c.dayNum}</span>:c.dayNum):""}
+                  </th>
+                )))}
+              </tr>
+            </thead>
+            <tbody>
+              {habits.map(h=>(
+                <tr key={h.id}>
+                  <td className="td-h">
+                    <div className="hnm">
+                      <span>{h.emoji}</span>
+                      <div>
+                        <div style={{display:"flex",alignItems:"center",gap:4}}>
+                          {h.name}
+                          <button className="delbtn" onClick={()=>delHabit(h.id)}>✕</button>
+                        </div>
+                        <div className={`hrule ${h.blockIfOver?"blk":""}`}>
+                          {h.confirmOnly?"Confirm daily":h.minHrs>0?`Min ${h.minHrs>=1?h.minHrs+"h":h.minHrs*60+"min"}`:""}
+                          {h.maxHrs!==null?` · Max ${h.maxHrs}h`:""}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  {weeks.map((wk,wi)=>wk.map((c,di)=>{
+                    if(!c) return <td key={`e${wi}${di}`} className="td-c fut"/>;
+                    const comp=getComp(h.id,c.dayNum);
+                    const isFut=c.dayNum>todayDay&&todayDay>0;
+                    return(
+                      <td key={`c${wi}${di}`} className={`td-c ${isFut?"fut":""}`} onClick={()=>!isFut&&openPopup(h,c.dayNum)}>
+                        <div className={`chk ${comp?.done?"on":comp?.blocked?"bk":""}`}/>
+                      </td>
+                    );
+                  }))}
+                </tr>
+              ))}
+              <tr>
+                <td colSpan={weeks.reduce((s)=>s+7,1)} style={{padding:0}}>
+                  <div className="add-rw">
+                    <span style={{fontSize:18,cursor:"pointer"}} onClick={()=>{const e=["⚡","🏃","🎨","🧘","💡","🌿","✍️","🔑"];setNewEmoji(e[Math.floor(Math.random()*e.length)]);}}>{newEmoji}</span>
+                    <input className="add-in" placeholder="Add new habit..." value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addHabit()}/>
+                    <input className="add-in-sm" placeholder="Min hrs" type="number" min="0" step="0.25" value={newMin} onChange={e=>setNewMin(e.target.value)}/>
+                    <button className="addbtn" onClick={addHabit}>+ Add</button>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td className="td-pl">Progress %</td>
+                {weeks.map((wk,wi)=>wk.map((c,di)=>{
+                  if(!c) return <td key={`p${wi}${di}`} className="td-p" style={{background:"#f9fafb"}}/>;
+                  const s=dayStats.find(x=>x.day===c.dayNum),isFut=c.dayNum>todayDay&&todayDay>0,p=isFut?0:s?.pct??0;
+                  return <td key={`p${wi}${di}`} className={`td-p ${pClass(p)}`}>{isFut?"":p+"%"}</td>;
+                }))}
+              </tr>
+              {[["✓ Done","dyes",s=>s?.done],["✗ Not Done","dno",s=>s?.total-s?.done]].map(([lbl,cls,fn])=>(
+                <tr key={lbl}>
+                  <td className="td-dl">{lbl}</td>
+                  {weeks.map((wk,wi)=>wk.map((c,di)=>{
+                    if(!c) return <td key={`${lbl}${wi}${di}`} className="td-d"/>;
+                    const s=dayStats.find(x=>x.day===c.dayNum),isFut=c.dayNum>todayDay&&todayDay>0;
+                    return <td key={`${lbl}${wi}${di}`} className={`td-d ${cls}`}>{isFut?"":fn(s)}</td>;
+                  }))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ══ WEEKLY ═══════════════════════════════════════════════════════════ */}
+      {tab==="weekly"&&(()=>{
+        const tod=now.getDate(),todDow=now.getDay();
+        const wdays=Array.from({length:7},(_,i)=>{const d=new Date(now);d.setDate(tod-todDow+i);return{date:d,dayNum:d.getDate(),mo:d.getMonth(),yr:d.getFullYear()};});
+        return(
+          <div className="week-wrap">
+            {wdays.map(({date,dayNum,mo,yr})=>{
+              const isToday=dayNum===now.getDate()&&mo===now.getMonth();
+              const isFut=date>now;
+              const done=habits.filter(h=>mo===month&&yr===year&&getComp(h.id,dayNum)?.done).length;
+              const pct=habits.length?Math.round(done/habits.length*100):0;
+              return(
+                <div key={`${dayNum}-${mo}`} className={`wcard ${isToday?"tod":""}`}>
+                  <div className="wdname" style={isToday?{color:"#16a34a"}:{}}>{DAYS[date.getDay()]}</div>
+                  <div className="wddate">{MONTHS[mo].slice(0,3)} {dayNum}</div>
+                  <div className="dnt-wrap">
+                    <Donut pct={isFut?0:pct}/>
+                    <div className="dnt-pct" style={{fontSize:isFut?10:12,color:isFut?"#d1d5db":"#111"}}>{isFut?"—":`${pct}%`}</div>
+                  </div>
+                  <div className="wtasks">
+                    {habits.map(h=>{
+                      const isDone=mo===month&&yr===year&&getComp(h.id,dayNum)?.done;
+                      return(
+                        <div key={h.id} className="wtask" onClick={()=>!isFut&&mo===month&&openPopup(h,dayNum)}>
+                          <div className={`wchk ${isDone?"on":""}`}/>
+                          <span className={`wtnm ${isDone?"done":""}`}>{h.emoji} {h.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="wcnt"><span className="wcd">{isFut?0:done}</span><span className="wct"> / {habits.length}</span></div>
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
+
+      {/* ══ WINNER 🏆 ═════════════════════════════════════════════════════════ */}
+      {tab==="winner"&&(
+        <div className="win-page">
+          {winner?(
+            <div className="win-card">
+              <span className="win-trophy">🏆</span>
+              <div className="win-ttl">Monthly Champion</div>
+              <div className="win-name">{winner.name}</div>
+              <div className="win-stat">⚡ {winner.monthPts} points · {winner.checks} habits done</div>
+              <div className="win-wk">{MONTHS[month]} {year}</div>
+            </div>
+          ):(
+            <div className="win-card">
+              <span className="win-trophy">🏆</span>
+              <div className="win-ttl">No data yet</div>
+              <div className="win-name">Start tracking!</div>
+              <div className="win-wk">Complete habits to appear here</div>
+            </div>
+          )}
+          <div className="lb-card">
+            <div className="lb-hdr">
+              <div className="lb-th c">Rank</div>
+              <div className="lb-th">Name</div>
+              <div className="lb-th c">Points</div>
+              <div className="lb-th c">Habits</div>
+            </div>
+            {leaderboard.slice(0,20).map((u,i)=>(
+              <div key={u.id} className={`lb-row ${u.name===displayName?"you":""}`}>
+                <div className={`lb-rk ${i===0?"g":i===1?"s":i===2?"b":""}`}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${i+1}`}</div>
+                <div className="lb-nm">{u.name}{u.name===displayName&&<span className="lb-you"> ← you</span>}</div>
+                <div className="lb-n lb-p">{u.monthPts||0}</div>
+                <div className="lb-n lb-c">{u.checks||0}</div>
+              </div>
+            ))}
+            {leaderboard.length===0&&<div style={{padding:"20px",textAlign:"center",color:"#9ca3af",fontSize:13}}>Invite friends to compete! 👥<br/><span style={{fontSize:11,marginTop:4,display:"block"}}>Real-time updates <span className="live-badge"><span className="live-dot"/>LIVE</span></span></div>}
+          </div>
+          <div className="how-card">
+            <div className="how-ttl">How Points Work</div>
+            {[["Each habit completed","+10 pts"],["All habits in 1 day","+25 bonus"],["Leaderboard updates","Real-time ⚡"],["Winner resets","Every month 🏆"]].map(([a,p])=>(
+              <div key={a} className="how-row"><span style={{color:"#374151"}}>{a}</span><span className="how-pts">{p}</span></div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ══ ANALYSIS ═════════════════════════════════════════════════════════ */}
+      {tab==="analysis"&&(
+        <div className="an-wrap">
+          <div className="an-hdr">
+            <div className="an-stat"><div className="an-val">{overallPct}%</div><div className="an-lbl">Progress</div></div>
+            <div className="an-stat"><div className="an-val" style={{color:"#111"}}>{total}</div><div className="an-lbl">Days</div></div>
+            <div className="an-stat"><div className="an-val" style={{color:"#6b7280"}}>{totalChecks}</div><div className="an-lbl">Checks</div></div>
+          </div>
+          <div className="an-tbl">
+            <div className="an-thr">
+              <div className="an-th">Habit</div>
+              <div className="an-th c">Goal</div>
+              <div className="an-th c">Done</div>
+              <div className="an-th">Progress</div>
+            </div>
+            {habitStats.map(h=>(
+              <div key={h.id} className="an-row">
+                <div className="an-hb"><span>{h.emoji}</span><span>{h.name}</span></div>
+                <div className="an-n an-g">{h.goal}</div>
+                <div className="an-n an-a">{h.actual}</div>
+                <div className="an-prog">
+                  <div className="an-pt"><div className="an-pf" style={{width:`${h.pct}%`,background:acColor(h.pct)}}/></div>
+                  <div className="an-pc" style={{color:acColor(h.pct)}}>{h.pct}%</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
